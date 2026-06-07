@@ -1,0 +1,41 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports: ["11434:11434"]
+    volumes:
+      # Bind-mount a host folder into the container so downloaded models persist
+      # on your D: drive instead of being lost when the container is recreated.
+      - "D:/local-worker/ollama:/root/.ollama"
+    # GPU passthrough config (requires NVIDIA Container Toolkit + Compose v2).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia        # use the NVIDIA device driver
+              count: 1              # number of GPUs to expose (integer, not "all")
+              capabilities: [gpu]   # request GPU compute capability
+    environment:
+      - OLLAMA_KEEP_ALIVE=-1        # -1 keeps the loaded model resident in VRAM indefinitely (no cold reloads).
+      - OLLAMA_CONTEXT_LENGTH=32768 # increase context length for matching GitHub Copilot context window.
+    healthcheck:
+      test: ["CMD", "ollama", "list"]   # command that succeeds once the API is up
+      interval: 10s                     # run the check every 10 seconds
+      timeout: 5s                       # fail the check if it takes >5 seconds
+      retries: 5                        # mark unhealthy after 5 consecutive failures
+      start_period: 40s                 # grace window on startup before failures count
+    restart: always
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports: ["8080:8080"]
+    volumes:
+      # Persist WebUI state (accounts, settings, chat history) on the host drive.
+      - "D:/local-worker/open-webui:/app/backend/data"
+    environment:
+      # Tell the WebUI where to reach Ollama; "ollama" resolves via the compose network.
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: always
